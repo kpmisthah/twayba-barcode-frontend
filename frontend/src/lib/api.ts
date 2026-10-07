@@ -1,6 +1,11 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const TOKEN_KEY = "twayba.token";
 
+/** Full URL for a file the API serves, e.g. "/uploads/products/x.jpg". */
+export function assetUrl(path: string): string {
+  return new URL(path, API_URL).toString();
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -34,40 +39,54 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
-export async function api<T = unknown>(
-  path: string,
-  options: { method?: string; body?: unknown; query?: Record<string, string | undefined> } = {},
-): Promise<T> {
+interface RequestOptions {
+  method?: string;
+  /** JSON body, or FormData for file uploads. */
+  body?: unknown;
+  query?: Record<string, string | number | undefined>;
+}
+
+async function send(path: string, options: RequestOptions): Promise<Response> {
   const url = new URL(API_URL + path);
   for (const [key, value] of Object.entries(options.query ?? {})) {
-    if (value !== undefined && value !== "") url.searchParams.set(key, value);
+    if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
   }
 
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = options.body instanceof FormData;
+  if (options.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
 
   let res: Response;
   try {
     res = await fetch(url, {
       method: options.method ?? "GET",
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: isForm ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
   } catch {
     throw new ApiError(0, "Cannot reach the server. Check your connection.");
   }
 
-  if (res.status === 204) return undefined as T;
-  const data = await res.json().catch(() => null);
-
   if (!res.ok) {
+    const data = await res.json().catch(() => null);
     if (res.status === 401 && token) onUnauthorized?.();
     const message = Array.isArray(data?.message)
       ? data.message.join(". ")
       : (data?.message ?? `Request failed (${res.status})`);
     throw new ApiError(res.status, message);
   }
-  return data as T;
+  return res;
+}
+
+export async function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
+  const res = await send(path, options);
+  if (res.status === 204) return undefined as T;
+  return (await res.json().catch(() => null)) as T;
+}
+
+/** For endpoints that return a file (e.g. label PDFs). */
+export async function apiBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+  return (await send(path, options)).blob();
 }

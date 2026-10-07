@@ -52,6 +52,8 @@ Change that password straight away under **My account**.
 | `npm run db:studio` | Browse the database |
 | `npm test` | Unit tests |
 
+Uploaded product images are stored in `backend/uploads/` (set `UPLOAD_DIR` to change). Back this folder up together with the database.
+
 ## Roles
 
 | Role | Access |
@@ -68,7 +70,7 @@ Permissions are checked in the API on every request. Deactivated users are block
 ## Progress
 
 - [x] Phase 1 — Auth, users, roles, audit log
-- [ ] Phase 2 — Products, categories, variants, tax rates, barcodes, kits, labels
+- [x] Phase 2 — Products, categories, variants, tax rates, barcodes, kits, labels
 - [ ] Phase 3 — Location tree, location labels
 - [ ] Phase 4 — Inventory and movement ledger
 - [ ] Phase 5 — Mobile barcode scanning
