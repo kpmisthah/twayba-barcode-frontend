@@ -34,7 +34,7 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="mx-auto max-w-2xl">
       <PageHeader title="Categories" description="Group products, e.g. Chairs, Shelving, Electronics." />
       <form
         className="mb-4 flex gap-2"
