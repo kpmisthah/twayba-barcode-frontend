@@ -2,9 +2,22 @@ import type { Role } from "./types";
 
 /** Mirrors the API's role groups so the UI only offers actions that will succeed. */
 const GROUPS = {
-  catalogRead: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "VIEWER"],
+  catalogRead: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "VIEWER", "DRIVER"],
   catalogWrite: ["ADMIN", "MANAGER"],
   labelPrint: ["ADMIN", "MANAGER", "WAREHOUSE"],
+  locationRead: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "VIEWER", "DRIVER"],
+  locationWrite: ["ADMIN", "MANAGER"],
+  stockRead: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "VIEWER", "DRIVER"],
+  stockWrite: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "DRIVER"],
+  stockAdjust: ["ADMIN", "MANAGER"],
+  pos: ["ADMIN", "MANAGER", "CASHIER"],
+  salesRead: ["ADMIN", "MANAGER", "CASHIER", "VIEWER"],
+  orderRead: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "VIEWER", "DRIVER"],
+  orderWrite: ["ADMIN", "MANAGER"],
+  delivery: ["ADMIN", "MANAGER", "DRIVER"],
+  reports: ["ADMIN", "MANAGER", "VIEWER"],
+  audit: ["ADMIN", "MANAGER", "VIEWER"],
+  dashboard: ["ADMIN", "MANAGER", "WAREHOUSE", "CASHIER", "VIEWER"],
   settings: ["ADMIN"],
   users: ["ADMIN", "MANAGER"],
 } as const satisfies Record<string, readonly Role[]>;
