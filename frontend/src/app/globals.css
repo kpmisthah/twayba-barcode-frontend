@@ -1,17 +1,44 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-brand: #0c41a7;
-  --color-brand-dark: #08307d;
-  --color-ink: #16202e;
-  --color-muted: #64708a;
-  --color-line: #d9dee8;
-  --color-surface: #f3f5f9;
-  --color-page: #f7f8fb;
-  --color-ok: #127a43;
-  --color-danger: #c42b2b;
+  --color-brand: #3a4fe0;
+  --color-brand-dark: #2a3bc2;
+  --color-ink: #151b2e;
+  --color-muted: #6b7691;
+  --color-line: #e5e8f0;
+  --color-surface: #f1f3f9;
+  --color-page: #f6f7fb;
+  --color-ok: #0f8a4f;
+  --color-danger: #d23a3a;
+  --color-warn: #b7791f;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Rounder corners everywhere (existing rounded-lg / rounded-xl classes pick these up). */
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  /* Soft, layered shadows instead of hard borders. */
+  --shadow-sm: 0 1px 2px rgb(21 27 46 / 0.04), 0 1px 3px rgb(21 27 46 / 0.06);
+  --shadow-xl: 0 20px 50px -12px rgb(21 27 46 / 0.25);
+
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-sheet-up: sheet-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-in: pop-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes pop-in {
+  from { transform: scale(0.97); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 :root {
@@ -19,6 +46,31 @@
 }
 
 body {
-  background: var(--color-page);
+  background:
+    radial-gradient(1000px 420px at 85% -120px, rgb(58 79 224 / 0.07), transparent 70%),
+    var(--color-page);
   color: var(--color-ink);
+}
+
+::selection {
+  background: rgb(58 79 224 / 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+button:not(:disabled),
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
