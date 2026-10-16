@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+# self-signed certs from `npm run dev:phone`
+/certificates
 
 # debug
 npm-debug.log*
