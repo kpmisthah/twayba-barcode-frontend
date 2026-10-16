@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { MovementList, ProductStockPanel } from "@/components/stock";
 import { Thumb } from "@/components/thumb";
 import { Alert, Badge, Button, Modal, Spinner } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -39,6 +40,7 @@ export default function ProductPage() {
 
   const canEdit = can(user?.role, "catalogWrite");
   const canPrint = can(user?.role, "labelPrint");
+  const canMoveStock = can(user?.role, "stockWrite");
   const money = (v: string | null | undefined) => formatMoney(v, settings?.currency);
 
   const load = useCallback(() => {
@@ -72,7 +74,7 @@ export default function ProductPage() {
   const boxQty = (boxId: string) => kit?.components.find((c) => c.componentVariant.id === boxId)?.quantity;
 
   return (
-    <div className="max-w-4xl">
+    <div className="mx-auto max-w-4xl">
       <Link href="/products" className="mb-4 inline-block text-sm text-brand">
         ← Products
       </Link>
@@ -185,7 +187,27 @@ export default function ProductPage() {
         />
       )}
 
-      <p className="mt-6 text-sm text-muted">Stock by location will appear here once locations and inventory are set up.</p>
+      <div className="mt-6">
+        {canMoveStock && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {(["add", "remove", "move"] as const).map((tab) => (
+              <Link
+                key={tab}
+                href={`/stock?tab=${tab}&product=${product.id}`}
+                className="inline-flex min-h-11 items-center rounded-lg border border-line bg-white px-4 text-sm font-semibold text-ink hover:bg-surface"
+              >
+                {tab === "add" ? "+ Add stock" : tab === "remove" ? "Remove stock" : "Move stock"}
+              </Link>
+            ))}
+          </div>
+        )}
+        <ProductStockPanel productId={product.id} />
+      </div>
+
+      <section className="mt-6">
+        <h2 className="mb-3 font-semibold text-ink">Stock history</h2>
+        <MovementList filter={{ productId: product.id }} showProduct={false} />
+      </section>
 
       <Modal title="Edit details" open={dialog?.kind === "info"} onClose={() => setDialog(null)}>
         <EditInfoForm product={product} onSaved={saved} />

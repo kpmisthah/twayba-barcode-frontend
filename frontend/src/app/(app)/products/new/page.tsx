@@ -83,7 +83,7 @@ export default function NewProductPage() {
   }
 
   return (
-    <form onSubmit={submit} className="max-w-3xl">
+    <form onSubmit={submit} className="mx-auto max-w-3xl">
       <PageHeader title="Add product" description="Codes and barcodes are created automatically when you save." />
       {error && (
         <div className="mb-4">
@@ -214,7 +214,7 @@ export default function NewProductPage() {
         </>
       )}
 
-      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-line bg-page/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
+      <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] -mx-4 flex lg:bottom-0 gap-3 border-t border-line bg-page/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
         <Button type="submit" disabled={saving} className="flex-1 sm:flex-none">
           {saving ? "Saving…" : "Save product"}
         </Button>
