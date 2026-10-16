@@ -1,0 +1,43 @@
+# Render Blueprint for the Twayba Inventory API (NestJS + Prisma).
+# The database is created by hand in the Render dashboard (see docs/deployment.md), then its
+# "Internal Database URL" is pasted into DATABASE_URL below.
+#
+# NOTE: this uses a paid instance because uploaded photos need a persistent disk, and Render
+# only offers disks on paid services. See docs/deployment.md → "Uploaded photos".
+services:
+  - type: web
+    name: twayba-api
+    runtime: node
+    region: frankfurt # keep in the same region as the database
+    plan: starter
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    # Apply any new database migrations, then start the API.
+    startCommand: npx prisma migrate deploy && node dist/main
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # paste the database's Internal Database URL
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: WEB_ORIGIN
+        sync: false # your Vercel address, e.g. https://twayba.vercel.app (comma-separate several)
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false # optional: only if the website sends orders (leave empty to switch off)
