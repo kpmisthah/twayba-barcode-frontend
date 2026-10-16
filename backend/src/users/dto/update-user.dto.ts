@@ -1,5 +1,8 @@
 import { Role } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsUUID,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -31,4 +34,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsEnum(Role)
   role?: Role;
+
+  /** Sites this person may change stock in; [] = all sites. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  siteIds?: string[];
 }

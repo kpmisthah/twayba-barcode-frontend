@@ -1,5 +1,8 @@
 import { Role } from '@prisma/client';
 import {
+  ArrayMaxSize,
+  IsArray,
+  IsUUID,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -35,4 +38,11 @@ export class CreateUserDto {
   @MinLength(PASSWORD_MIN_LENGTH)
   @MaxLength(200)
   password: string;
+
+  /** Sites this person may change stock in; omit or [] = all sites. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsUUID('all', { each: true })
+  siteIds?: string[];
 }

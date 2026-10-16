@@ -7,6 +7,7 @@ export const publicUserSelect = {
   email: true,
   phone: true,
   role: true,
+  siteIds: true,
   active: true,
   lastLoginAt: true,
   createdAt: true,

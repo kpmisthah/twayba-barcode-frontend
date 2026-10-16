@@ -7,6 +7,8 @@ export interface AuthUser {
   email: string | null;
   phone: string | null;
   role: Role;
+  /** Sites this user may change stock in; empty = all (see SiteAccessService). */
+  siteIds: string[];
 }
 
 export interface JwtPayload {

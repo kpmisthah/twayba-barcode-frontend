@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role } from '@prisma/client';
+import { LocationType, Prisma, Role } from '@prisma/client';
 import { AuditService } from '../audit/audit.service.js';
 import { normalizePhone } from '../auth/auth.service.js';
 import type { AuthUser } from '../auth/auth.types.js';
@@ -59,10 +59,11 @@ export class UsersService {
     const phone = dto.phone ? normalizePhone(dto.phone) : null;
     if (!email && !phone) throw new BadRequestException('Enter an email or a phone number');
 
+    const siteIds = await this.validSites(dto.siteIds);
     const passwordHash = await hashPassword(dto.password);
     const user = await this.uniqueGuard(() =>
       this.prisma.user.create({
-        data: { name: dto.name.trim(), email, phone, role: dto.role, passwordHash },
+        data: { name: dto.name.trim(), email, phone, role: dto.role, passwordHash, siteIds },
         select: publicUserSelect,
       }),
     );
@@ -71,7 +72,7 @@ export class UsersService {
       action: 'USER_CREATED',
       entity: 'User',
       entityId: user.id,
-      data: { name: user.name, email, phone, role: user.role },
+      data: { name: user.name, email, phone, role: user.role, siteIds },
     });
     return user;
   }
@@ -89,6 +90,7 @@ export class UsersService {
     if (dto.email !== undefined) data.email = dto.email ? dto.email.trim().toLowerCase() : null;
     if (dto.phone !== undefined) data.phone = dto.phone ? normalizePhone(dto.phone) : null;
     if (dto.role !== undefined) data.role = dto.role;
+    if (dto.siteIds !== undefined) data.siteIds = await this.validSites(dto.siteIds);
 
     const nextEmail = data.email !== undefined ? data.email : target.email;
     const nextPhone = data.phone !== undefined ? data.phone : target.phone;
@@ -109,8 +111,8 @@ export class UsersService {
       entity: 'User',
       entityId: id,
       data: {
-        before: { name: target.name, email: target.email, phone: target.phone, role: target.role },
-        after: { name: user.name, email: user.email, phone: user.phone, role: user.role },
+        before: { name: target.name, email: target.email, phone: target.phone, role: target.role, siteIds: target.siteIds },
+        after: { name: user.name, email: user.email, phone: user.phone, role: user.role, siteIds: user.siteIds },
       },
     });
     return user;
@@ -163,6 +165,15 @@ export class UsersService {
     if (!canManageRole(actor.role, role)) {
       throw new ForbiddenException(`You cannot manage users with the ${role} role`);
     }
+  }
+
+  /** Site restrictions must point at real, top-level sites. */
+  private async validSites(siteIds?: string[]): Promise<string[]> {
+    const ids = [...new Set(siteIds ?? [])];
+    if (!ids.length) return [];
+    const found = await this.prisma.location.count({ where: { id: { in: ids }, type: LocationType.SITE } });
+    if (found !== ids.length) throw new BadRequestException('Choose sites (garages / shops) only');
+    return ids;
   }
 
   private async assertAnotherActiveAdmin(tx: Prisma.TransactionClient, excludeId: string) {
