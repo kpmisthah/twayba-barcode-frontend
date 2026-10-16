@@ -2,6 +2,8 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { VariantKind } from '@prisma/client';
 import bwipjs from 'bwip-js';
 import PDFDocument from 'pdfkit';
+import { shortPath, withDescendants } from '../locations/location-tree.js';
+import { LocationsService } from '../locations/locations.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 
@@ -18,13 +20,19 @@ interface LabelContent {
   subtitle: string | null;
   code: string;
   price: string | null;
+  /** Printed next to the code when it differs from it (client brief §10: name, SKU, box, barcode). */
+  sku?: string | null;
 }
+
+/** The SKU only adds information when someone set their own (generated SKUs equal the code). */
+const extraSku = (sku: string, code: string) => (sku && sku !== code ? sku : null);
 
 @Injectable()
 export class LabelsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
+    private readonly locations: LocationsService,
   ) {}
 
   /**
@@ -54,7 +62,7 @@ export class LabelsService {
           const c = part.componentVariant;
           if (!c.active) continue;
           labels.push({
-            content: { title: v.product.name, subtitle: c.name, code: c.code, price: null },
+            content: { title: v.product.name, subtitle: c.name, code: c.code, price: null, sku: extraSku(c.sku, c.code) },
             copies: req.copies * part.quantity,
           });
         }
@@ -64,6 +72,7 @@ export class LabelsService {
             title: v.product.name,
             subtitle: v.name === 'Default' ? null : v.name,
             code: v.code,
+            sku: extraSku(v.sku, v.code),
             price:
               settings.labelShowPrice && v.kind === VariantKind.STANDARD && v.price
                 ? money.format(Number(v.price))
@@ -80,6 +89,39 @@ export class LabelsService {
       throw new BadRequestException(`That is ${total} labels — print at most ${MAX_LABELS_PER_JOB} at a time`);
     }
 
+    return renderPdf(labels, settings.labelWidthMm, settings.labelHeightMm);
+  }
+
+  /**
+   * One label per location: its name, the nearest part of its path and a barcode of its code.
+   * With `withChildren`, a shelf also prints every space on it (hidden ones are skipped).
+   */
+  async locationLabels(locationIds: string[], withChildren: boolean): Promise<Buffer> {
+    const settings = await this.settings.getAll();
+    const all = await this.locations.withPaths();
+    const known = new Set(all.map((l) => l.id));
+    if (locationIds.some((id) => !known.has(id))) {
+      throw new BadRequestException('One of the selected locations no longer exists');
+    }
+
+    const selected = withChildren ? withDescendants(all, locationIds) : all.filter((l) => locationIds.includes(l.id));
+    const active = selected.filter((l) => l.active);
+    if (active.length === 0) throw new BadRequestException('Nothing to print');
+    if (active.length > MAX_LABELS_PER_JOB) {
+      throw new BadRequestException(`That is ${active.length} labels — print at most ${MAX_LABELS_PER_JOB} at a time`);
+    }
+
+    // Roughly what fits on one line of the smallest label text.
+    const pathChars = Math.max(16, Math.floor(settings.labelWidthMm * 0.8));
+    const labels = active.map((l) => ({
+      content: {
+        title: l.name,
+        subtitle: shortPath(l.pathNames.slice(0, -1), pathChars) || null,
+        code: l.code,
+        price: null,
+      },
+      copies: 1,
+    }));
     return renderPdf(labels, settings.labelWidthMm, settings.labelHeightMm);
   }
 }
@@ -139,7 +181,8 @@ async function renderPdf(
       });
 
       doc.font('Helvetica').fontSize(smallSize);
-      doc.text(content.code, pad, height - pad - smallSize, { width: inner, align: 'center', lineBreak: false });
+      const codeLine = content.sku ? `${content.code}  ·  SKU ${content.sku}` : content.code;
+      doc.text(codeLine, pad, height - pad - smallSize, { width: inner, align: 'center', lineBreak: false, ellipsis: true });
     }
   }
 

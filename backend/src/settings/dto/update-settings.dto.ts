@@ -41,4 +41,36 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   labelShowPrice?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  businessAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  businessPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  vatNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  receiptFooter?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(48)
+  @Max(120)
+  receiptWidthMm?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  maxDiscountPercent?: number;
 }

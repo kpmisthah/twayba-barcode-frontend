@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from 
 import type { AuthUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
-import { CATALOG_WRITE, STAFF_READ } from '../auth/role-groups.js';
+import { CATALOG_WRITE, PRODUCT_READ } from '../auth/role-groups.js';
 import {
   AddBarcodeDto,
   CreateProductDto,
@@ -19,13 +19,13 @@ import { ProductsService } from './products.service.js';
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
-  @Roles(...STAFF_READ)
+  @Roles(...PRODUCT_READ)
   @Get('products')
   async list(@CurrentUser() user: AuthUser, @Query() query: ListProductsQuery) {
     return hideCost(user, await this.products.list(query));
   }
 
-  @Roles(...STAFF_READ)
+  @Roles(...PRODUCT_READ)
   @Get('products/:id')
   async get(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return hideCost(user, await this.products.get(id));
@@ -98,7 +98,7 @@ export class ProductsController {
   }
 
   /** Scanner lookup: what item is this code? */
-  @Roles(...STAFF_READ)
+  @Roles(...PRODUCT_READ)
   @Get('barcodes/lookup/:code')
   async lookup(@CurrentUser() user: AuthUser, @Param('code') code: string) {
     return hideCost(user, await this.products.lookup(code));

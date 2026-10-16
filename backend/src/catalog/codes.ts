@@ -1,10 +1,16 @@
 /** Internal code helpers. Codes are generated once and never change. */
 
 export const CODE_PREFIX = 'TW';
+export const LOCATION_PREFIX = 'LOC';
 
 /** 123 → "TW-000123" */
 export function productCode(number: number): string {
   return `${CODE_PREFIX}-${String(number).padStart(6, '0')}`;
+}
+
+/** 12 → "LOC-000012" */
+export function locationCode(number: number): string {
+  return `${LOCATION_PREFIX}-${String(number).padStart(6, '0')}`;
 }
 
 /** Variant n (1-based) of a product: "TW-000123-01". */

@@ -12,6 +12,16 @@ export interface AppSettings {
   labelHeightMm: number;
   /** Print the selling price on product labels. */
   labelShowPrice: boolean;
+  /** Printed on invoices and receipts. */
+  businessAddress: string;
+  businessPhone: string;
+  vatNumber: string;
+  /** Thank-you / returns policy line at the bottom of receipts and invoices. */
+  receiptFooter: string;
+  /** Receipt printer paper width (58 or 80 mm usually). */
+  receiptWidthMm: number;
+  /** Cashiers may give up to this % discount per line; more needs an admin/manager. */
+  maxDiscountPercent: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -21,6 +31,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   labelWidthMm: 50,
   labelHeightMm: 25,
   labelShowPrice: false,
+  businessAddress: '',
+  businessPhone: '',
+  vatNumber: '',
+  receiptFooter: 'Thank you for your purchase!',
+  receiptWidthMm: 80,
+  maxDiscountPercent: 10,
 };
 
 @Injectable()

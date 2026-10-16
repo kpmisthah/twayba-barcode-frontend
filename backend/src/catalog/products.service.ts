@@ -17,6 +17,7 @@ import {
   componentCode,
   componentName,
   CODE_PREFIX,
+  LOCATION_PREFIX,
   productCode,
   variantCode,
   variantName,
@@ -32,8 +33,11 @@ import {
 
 type Tx = Prisma.TransactionClient;
 
-/** "TW-123…" is reserved for generated codes so manual entries can never collide with them. */
-const RESERVED_CODE = new RegExp(`^${CODE_PREFIX}-\\d`, 'i');
+/**
+ * "TW-123…" and "LOC-123…" are reserved for generated product and location codes,
+ * so manual entries can never collide with them (or make a scan ambiguous).
+ */
+const RESERVED_CODE = new RegExp(`^(${CODE_PREFIX}|${LOCATION_PREFIX})-\\d`, 'i');
 
 export const productDetailInclude = {
   category: { select: { id: true, name: true } },
@@ -507,7 +511,7 @@ export class ProductsService {
     const reserved = entered.find((v) => RESERVED_CODE.test(v));
     if (reserved) {
       throw new BadRequestException(
-        `"${reserved}" looks like a system code (${CODE_PREFIX}-…). Leave it empty and the system will generate one.`,
+        `"${reserved}" looks like a system code (${CODE_PREFIX}-… or ${LOCATION_PREFIX}-…). Leave it empty and the system will generate one.`,
       );
     }
     const dupes = entered.filter((v, i) => entered.indexOf(v) !== i);
