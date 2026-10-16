@@ -25,11 +25,12 @@ Responsive: desktop (admin), tablet and phone (scanning, POS, driver).
 |---|---|
 | Barcodes | Client has none. The system generates codes and prints labels. Supplier barcodes can be added later; a product may have several barcodes. |
 | Multi-box products (kits) | Supported. Client enters kits and their boxes. |
-| Location structure | Flexible tree. Garages: Site → Room → Shelf → Space. Hamrun: Site → Floor (1 Upper, 2 Middle, 3 Lower) → Room → Shelf → Space. Space codes (A1, A2…) may repeat in different rooms. |
+| Location structure | Flexible tree. Sites: **Naxxar Garage, Mosta Garage 1, Mosta Garage 2, Hamrun Shop**. Garages: Site → Room → Shelf → Space. Hamrun: Site → Floor (Top, Middle, Bottom) → Room → Shelf → Space. Rooms are named by the client (e.g. "Room 1"); shelves are lettered (Shelf A, Shelf B) and spaces on a shelf use codes like A1, A2, A3 (on Shelf A), B1, B2, B3 (on Shelf B) — e.g. `Room 1 › Shelf A › A1`. Codes may repeat in different rooms. The shop display area is a location too, so stock on display is tracked. |
 | VAT | Configurable tax rates + setting "prices include VAT". Client fills in. |
 | POS stock source | Cashier **always chooses** the space the item was taken from (popup after each scan). |
 | Printers | Decided later. Label size and receipt width are settings (defaults 50×25 mm, 80 mm). A4 PDF always available. |
-| Roles | Isaac, Sulthan = Admin. Salesman = Cashier. Delivery staff = Driver. |
+| Roles | Isaac, Sulthan = Admin. Shop salesman = Cashier. Delivery boy = Driver. **Salesman and delivery boy can also add stock, remove stock, transfer stock between locations and mark items damaged** (confirmed 2026-10-10). |
+| POS on phone | Salesman scans products on the phone; the invoice is shown on screen with a **Download (PDF)** button. |
 
 ## 3. Roles
 
@@ -38,13 +39,15 @@ Responsive: desktop (admin), tablet and phone (scanning, POS, driver).
 | ADMIN | Everything, including users, settings, stock corrections and overrides |
 | MANAGER | Products, inventory, orders, reports, staff (not system settings); can approve overrides |
 | WAREHOUSE | Scanning, receive / transfer / count stock, picking — only in assigned locations |
-| CASHIER | POS, sales, invoices, returns |
-| DRIVER | Own assigned deliveries only |
+| CASHIER | POS, sales, invoices, returns; scan products; add / remove / transfer stock and mark damaged |
+| DRIVER | Own assigned deliveries; scan products; add / remove / transfer stock and mark damaged |
 | VIEWER | Read-only: stock, orders, reports, audit history |
 
 - Every person has an individual login; accounts are deactivated, never deleted.
 - Permissions are enforced in the backend on every request (hiding buttons is not security).
-- Warehouse users can be limited to specific sites.
+- Warehouse, shop and delivery users can be limited to specific sites (Users → Edit → "Sites this
+  person can change stock in"). A limited user can see stock everywhere but can only add, remove,
+  transfer, count, sell and pick in their own sites. Admins and managers are never limited.
 
 ## 4. Products
 
@@ -99,9 +102,13 @@ users can never take the same last unit.
 - **Add stock**: item, location, qty, reason (New purchase, Return, Found, Other).
 - **Remove stock**: reasons Damaged, Lost, Expired, Manual adjustment, Other.
   (Sales only via POS; picking only via orders.)
-- **Transfer**: item, from, to, qty, reason/reference.
+- **Transfer**: item, from, to, qty, reason/reference. Instant ("Update stock → Move"), or
+  two-step ("Transfers"): scanned out at the source (stock goes In Transit) and scanned in at the
+  destination; partial receipts allowed; what never arrives is written off by a manager with a reason.
 - **Stocktake**: choose location → expected list → scan/count → variance → Admin/Manager approves
-  → adjustment movements.
+  → adjustment movements. Each item's difference is counted − what the system held *when that
+  item was counted*, so sales or moves made later during the stocktake are not undone. Items not
+  counted must be confirmed as "not found" (0) before submitting. One open stocktake per area.
 - **Low stock**: products below minimum shown on dashboard and report.
 
 ## 7. Scanning
@@ -143,6 +150,8 @@ method, movements.
   stock is reserved.
 - Picking list grouped by site, with images. Each scan is validated: correct item, correct box,
   correct location, not beyond quantity. Wrong location needs an override.
+- Each valid pick scan loads that unit straight onto the van (Reserved → In Transit) — the
+  driver's first scan; confirming delivery is the second.
 - Stock lifecycle: Available → Reserved → Loaded (moved to In Transit) → Delivered (removed).
   Failed delivery stays In Transit until returned or re-delivered. Cancellation releases reservations,
   or requires a return scan if already loaded.
@@ -205,7 +214,7 @@ stocktake variance, orders, deliveries, picking errors, overrides, incomplete ki
 
 ## 16. Open questions (not blocking)
 
-- Can the cashier/salesman also add and move stock, or only sell?
+- ~~Can the cashier/salesman also add and move stock, or only sell?~~ Yes — salesman and delivery boy can add, remove, transfer and mark damaged (2026-10-10).
 - How many salesmen and drivers?
 - Printer models (label and receipt).
 - Fiscal receipt requirements (accountant).
