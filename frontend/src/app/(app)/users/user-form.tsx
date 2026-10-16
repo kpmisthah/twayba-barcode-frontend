@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Button, Field, Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
-import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role, type User } from "@/lib/types";
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Location, type Role, type User } from "@/lib/types";
 
 const MIN_PASSWORD = 8;
 
@@ -24,8 +24,16 @@ export function UserForm({
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [role, setRole] = useState<Role>(user?.role ?? roles.find((r) => r === "CASHIER") ?? roles[0]);
   const [password, setPassword] = useState("");
+  const [siteIds, setSiteIds] = useState<string[]>(user?.siteIds ?? []);
+  const [sites, setSites] = useState<Location[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api<Location[]>("/locations").then((all) => setSites(all.filter((l) => l.type === "SITE"))).catch(() => undefined);
+  }, []);
+  const unlimitedRole = role === "ADMIN" || role === "MANAGER";
+  const toggleSite = (id: string) => setSiteIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
 
   // When editing, the current role must be selectable even if it's outside `roles`.
   const roleOptions = user && !roles.includes(user.role) ? [user.role, ...roles] : roles;
@@ -46,7 +54,7 @@ export function UserForm({
               name,
               email: email.trim() || null,
               phone: phone.trim() || null,
-              ...(isSelf ? {} : { role }),
+              ...(isSelf ? {} : { role, siteIds: unlimitedRole ? [] : siteIds }),
             },
           })
         : await api<User>("/users", {
@@ -55,6 +63,7 @@ export function UserForm({
               name,
               role,
               password,
+              siteIds: unlimitedRole ? [] : siteIds,
               ...(email.trim() && { email: email.trim() }),
               ...(phone.trim() && { phone: phone.trim() }),
             },
@@ -90,6 +99,20 @@ export function UserForm({
           </Select>
         )}
       </Field>
+      {!unlimitedRole && !isSelf && sites.length > 0 && (
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1 text-sm font-medium text-ink">Sites this person can change stock in</legend>
+          <div className="flex flex-wrap gap-2">
+            {sites.map((s) => (
+              <label key={s.id} className={`flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm ${siteIds.includes(s.id) ? "border-brand bg-brand/5 text-brand" : "border-line text-ink"}`}>
+                <input type="checkbox" className="size-4" checked={siteIds.includes(s.id)} onChange={() => toggleSite(s.id)} />
+                {s.name}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-muted">{siteIds.length ? "Only the ticked sites." : "None ticked = all sites."} They can still see stock everywhere.</p>
+        </fieldset>
+      )}
       {!user && (
         <Field label="Password" hint={`At least ${MIN_PASSWORD} characters. Share it with the person privately.`}>
           {(id) => (
