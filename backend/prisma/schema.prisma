@@ -27,12 +27,30 @@ model User {
   phone        String?   @unique
   passwordHash String
   role         Role
+  /// Sites (top-level locations) this user may change stock in. Empty = all sites.
+  /// Ignored for admins and managers.
+  siteIds      String[]  @default([]) @db.Uuid
   active       Boolean   @default(true)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  auditLogs AuditLog[]
+  auditLogs     AuditLog[]
+  movements     StockMovement[]
+  sales              Sale[]       @relation("SaleCashier")
+  approvedSales      Sale[]       @relation("SaleApprover")
+  creditNotes        CreditNote[] @relation("CreditNoteCashier")
+  stocktakesCreated  Stocktake[]  @relation("StocktakeCreator")
+  stocktakesSubmitted Stocktake[] @relation("StocktakeSubmitter")
+  stocktakesApproved Stocktake[]  @relation("StocktakeApprover")
+  driverOrders       Order[]      @relation("OrderDriver")
+  createdOrders      Order[]      @relation("OrderCreator")
+  shortApprovedOrders Order[]     @relation("OrderShortApprover")
+  deliveredOrders    Order[]      @relation("OrderDeliverer")
+  partialApprovedOrders Order[]   @relation("OrderPartialApprover")
+  deliveryExceptions DeliveryException[] @relation("ExceptionReporter")
+  transfersSent      StockTransfer[] @relation("TransferSender")
+  transfersReceived  StockTransfer[] @relation("TransferReceiver")
 
   @@map("users")
 }
@@ -156,6 +174,15 @@ model ProductVariant {
   updatedAt DateTime    @updatedAt
 
   barcodes   Barcode[]
+  stockLevels StockLevel[]
+  movements   StockMovement[]
+  saleLines   SaleLine[]
+  salePicks   SalePick[]
+  stocktakeLines StocktakeLine[]
+  orderLines  OrderLine[]
+  orderAllocations OrderAllocation[]
+  deliveryExceptions DeliveryException[]
+  transferLines StockTransferLine[]
   /// For a KIT variant: the boxes it is made of.
   components KitComponent[] @relation("KitParent")
   /// For a COMPONENT variant: the kits it belongs to.
@@ -197,6 +224,603 @@ model Barcode {
 
   @@index([variantId])
   @@map("barcodes")
+}
+
+// ---------------------------------------------------------------------------
+// Locations
+// ---------------------------------------------------------------------------
+
+/// SITE → (FLOOR →) ROOM → SHELF → SPACE. TRANSIT and DAMAGED are system
+/// locations (one of each, no parent) used by later stock phases.
+enum LocationType {
+  SITE
+  FLOOR
+  ROOM
+  SHELF
+  SPACE
+  TRANSIT
+  DAMAGED
+}
+
+/// Never hard-deleted (stock movements will refer to them); hide with `active`.
+model Location {
+  id        String       @id @default(uuid()) @db.Uuid
+  type      LocationType
+  /// Shown in paths: "Hamrun Shop", "Top", "Room 1", "Shelf A", "A1".
+  name      String
+  /// Scan code printed on the location label (LOC-000001), never changed.
+  code      String       @unique
+  parentId  String?      @db.Uuid
+  parent    Location?    @relation("LocationTree", fields: [parentId], references: [id])
+  children  Location[]   @relation("LocationTree")
+  sortOrder Int          @default(0)
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  stockLevels  StockLevel[]
+  movementsOut StockMovement[] @relation("MovementFrom")
+  movementsIn  StockMovement[] @relation("MovementTo")
+  sales        Sale[]          @relation("SaleSite")
+  salePicks    SalePick[]
+  returnLines  CreditNoteLine[]
+  stocktakes   Stocktake[]
+  stocktakeLines StocktakeLine[]
+  orderAllocations OrderAllocation[]
+  transfersOut StockTransfer[] @relation("TransferFrom")
+  transfersIn  StockTransfer[] @relation("TransferTo")
+  deliveryExceptions DeliveryException[]
+
+  @@index([parentId])
+  @@map("locations")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory — only StockService writes these
+// ---------------------------------------------------------------------------
+
+/// Current stock of one item (STANDARD or COMPONENT variant) at one location.
+/// available = onHand − reserved. CHECK constraints keep 0 ≤ reserved ≤ onHand.
+model StockLevel {
+  id         String         @id @default(uuid()) @db.Uuid
+  variantId  String         @db.Uuid
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  locationId String         @db.Uuid
+  location   Location       @relation(fields: [locationId], references: [id])
+  onHand     Int            @default(0)
+  reserved   Int            @default(0)
+  updatedAt  DateTime       @updatedAt
+
+  @@unique([variantId, locationId])
+  @@index([locationId])
+  @@map("stock_levels")
+}
+
+enum MovementType {
+  /// Received into a location (purchase, found, …).
+  STOCK_IN
+  /// Removed from stock (lost, expired, …).
+  STOCK_OUT
+  TRANSFER
+  /// Stocktake correction, in or out.
+  ADJUSTMENT
+  /// Set aside for an order; stays on hand.
+  RESERVE
+  RELEASE
+  /// Reserved stock loaded on a van → In Transit.
+  LOAD
+  /// Handed to the customer; leaves In Transit.
+  DELIVER
+  /// Back from a failed/cancelled delivery or a customer.
+  RETURN
+  SALE
+  SALE_RETURN
+  /// Moved to the Damaged location.
+  DAMAGE
+  /// Two-step transfer, step 1: left the source, now In Transit.
+  TRANSFER_OUT
+  /// Two-step transfer, step 2: scanned in at the destination.
+  TRANSFER_IN
+}
+
+/// Append-only ledger: a database trigger rejects UPDATE and DELETE.
+model StockMovement {
+  id             String         @id @default(uuid()) @db.Uuid
+  type           MovementType
+  variantId      String         @db.Uuid
+  variant        ProductVariant @relation(fields: [variantId], references: [id])
+  /// Always positive; direction comes from from/to.
+  quantity       Int
+  fromLocationId String?        @db.Uuid
+  fromLocation   Location?      @relation("MovementFrom", fields: [fromLocationId], references: [id])
+  toLocationId   String?        @db.Uuid
+  toLocation     Location?      @relation("MovementTo", fields: [toLocationId], references: [id])
+  userId         String?        @db.Uuid
+  user           User?          @relation(fields: [userId], references: [id])
+  reason         String?
+  note           String?
+  /// Invoice number, order number, stocktake id…
+  reference      String?
+  createdAt      DateTime       @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([fromLocationId])
+  @@index([toLocationId])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Sales (POS) — invoices are immutable: triggers reject UPDATE and DELETE.
+// Returns (later) create credit notes instead of changing a sale.
+// ---------------------------------------------------------------------------
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  OTHER
+}
+
+model Sale {
+  id               String     @id @default(uuid()) @db.Uuid
+  /// Sequential, no gaps (taken from a counter inside the sale's transaction).
+  number           Int        @unique
+  invoiceNumber    String     @unique
+  /// The shop/site the sale was made at.
+  siteId           String?    @db.Uuid
+  site             Location?  @relation("SaleSite", fields: [siteId], references: [id])
+  cashierId        String     @db.Uuid
+  cashier          User       @relation("SaleCashier", fields: [cashierId], references: [id])
+  /// Admin/manager who approved a discount above the cashier limit.
+  approvedById     String?    @db.Uuid
+  approvedBy       User?      @relation("SaleApprover", fields: [approvedById], references: [id])
+  customerName     String?
+  customerPhone    String?
+  note             String?
+  /// Snapshot of settings at the time of sale.
+  currency         String
+  pricesIncludeTax Boolean
+  /// Before discount.
+  grossTotal       Decimal    @db.Decimal(12, 2)
+  discountTotal    Decimal    @db.Decimal(12, 2)
+  /// Excluding VAT, after discount.
+  netTotal         Decimal    @db.Decimal(12, 2)
+  taxTotal         Decimal    @db.Decimal(12, 2)
+  total            Decimal    @db.Decimal(12, 2)
+  /// Sum of payments (cash may be more than the total; the rest is change).
+  paidTotal        Decimal    @db.Decimal(12, 2)
+  changeGiven      Decimal    @db.Decimal(12, 2)
+  createdAt        DateTime   @default(now())
+
+  lines       SaleLine[]
+  payments    Payment[]
+  creditNotes CreditNote[]
+
+  @@index([createdAt])
+  @@index([cashierId])
+  @@map("sales")
+}
+
+/// One line on the invoice: a STANDARD variant or a whole KIT. Text fields are
+/// snapshots so the invoice never changes when the product is edited later.
+model SaleLine {
+  id              String         @id @default(uuid()) @db.Uuid
+  saleId          String         @db.Uuid
+  sale            Sale           @relation(fields: [saleId], references: [id])
+  lineNo          Int
+  variantId       String         @db.Uuid
+  variant         ProductVariant @relation(fields: [variantId], references: [id])
+  description     String
+  code            String
+  quantity        Int
+  /// As charged per unit (incl. or excl. VAT per the sale's pricesIncludeTax).
+  unitPrice       Decimal        @db.Decimal(12, 2)
+  discountPercent Decimal        @db.Decimal(5, 2)
+  discountAmount  Decimal        @db.Decimal(12, 2)
+  taxRateName     String?
+  taxRate         Decimal        @db.Decimal(5, 2)
+  taxAmount       Decimal        @db.Decimal(12, 2)
+  /// Line total including VAT.
+  total           Decimal        @db.Decimal(12, 2)
+
+  picks       SalePick[]
+  returnLines CreditNoteLine[]
+
+  @@unique([saleId, lineNo])
+  @@map("sale_lines")
+}
+
+/// Where the stock for a line was taken from (a kit line has one per box).
+model SalePick {
+  id         String         @id @default(uuid()) @db.Uuid
+  lineId     String         @db.Uuid
+  line       SaleLine       @relation(fields: [lineId], references: [id])
+  variantId  String         @db.Uuid
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  locationId String         @db.Uuid
+  location   Location       @relation(fields: [locationId], references: [id])
+  quantity   Int
+
+  @@map("sale_picks")
+}
+
+model Payment {
+  id        String        @id @default(uuid()) @db.Uuid
+  saleId    String        @db.Uuid
+  sale      Sale          @relation(fields: [saleId], references: [id])
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(12, 2)
+  /// Card slip / transfer reference.
+  reference String?
+  createdAt DateTime      @default(now())
+
+  @@index([saleId])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Returns — a credit note against an invoice. Immutable like invoices.
+// ---------------------------------------------------------------------------
+
+enum ReturnCondition {
+  /// Back into stock at a chosen location.
+  GOOD
+  /// To the Damaged location.
+  DAMAGED
+}
+
+model CreditNote {
+  id              String        @id @default(uuid()) @db.Uuid
+  /// Sequential, no gaps (own counter, separate from invoices).
+  number          Int           @unique
+  creditNumber    String        @unique
+  saleId          String        @db.Uuid
+  sale            Sale          @relation(fields: [saleId], references: [id])
+  cashierId       String        @db.Uuid
+  cashier         User          @relation("CreditNoteCashier", fields: [cashierId], references: [id])
+  reason          String?
+  refundMethod    PaymentMethod
+  refundReference String?
+  netTotal        Decimal       @db.Decimal(12, 2)
+  taxTotal        Decimal       @db.Decimal(12, 2)
+  total           Decimal       @db.Decimal(12, 2)
+  createdAt       DateTime      @default(now())
+
+  lines CreditNoteLine[]
+
+  @@index([saleId])
+  @@index([createdAt])
+  @@map("credit_notes")
+}
+
+model CreditNoteLine {
+  id           String          @id @default(uuid()) @db.Uuid
+  creditNoteId String          @db.Uuid
+  creditNote   CreditNote      @relation(fields: [creditNoteId], references: [id])
+  saleLineId   String          @db.Uuid
+  saleLine     SaleLine        @relation(fields: [saleLineId], references: [id])
+  quantity     Int
+  condition    ReturnCondition
+  /// Where the stock went back to (the Damaged location for DAMAGED).
+  locationId   String          @db.Uuid
+  location     Location        @relation(fields: [locationId], references: [id])
+  taxAmount    Decimal         @db.Decimal(12, 2)
+  /// Refund for this line, including VAT.
+  total        Decimal         @db.Decimal(12, 2)
+
+  @@index([saleLineId])
+  @@map("credit_note_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Stocktake — count a location, then an admin/manager approves the differences
+// ---------------------------------------------------------------------------
+
+enum StocktakeStatus {
+  COUNTING
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+model Stocktake {
+  id            String          @id @default(uuid()) @db.Uuid
+  number        Int             @unique
+  code          String          @unique
+  /// The location counted, including everything inside it.
+  locationId    String          @db.Uuid
+  location      Location        @relation(fields: [locationId], references: [id])
+  status        StocktakeStatus @default(COUNTING)
+  note          String?
+  createdById   String          @db.Uuid
+  createdBy     User            @relation("StocktakeCreator", fields: [createdById], references: [id])
+  submittedById String?         @db.Uuid
+  submittedBy   User?           @relation("StocktakeSubmitter", fields: [submittedById], references: [id])
+  submittedAt   DateTime?
+  approvedById  String?         @db.Uuid
+  approvedBy    User?           @relation("StocktakeApprover", fields: [approvedById], references: [id])
+  approvedAt    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  lines StocktakeLine[]
+
+  @@index([status])
+  @@map("stocktakes")
+}
+
+model StocktakeLine {
+  id          String         @id @default(uuid()) @db.Uuid
+  stocktakeId String         @db.Uuid
+  stocktake   Stocktake      @relation(fields: [stocktakeId], references: [id])
+  variantId   String         @db.Uuid
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  /// A space (or other stock-holding location) inside the stocktake's location.
+  locationId  String         @db.Uuid
+  location    Location       @relation(fields: [locationId], references: [id])
+  /// On hand when the stocktake started.
+  expected    Int
+  /// Null until counted.
+  counted     Int?
+  /// System on-hand at the moment of the (last) count. Approval applies counted − this, so
+  /// sales and moves made after an item was counted are not undone.
+  onHandAtCount Int?
+  /// On hand at approval, and the correction applied.
+  onHandAtApproval Int?
+  adjustment  Int?
+  countedById String?        @db.Uuid
+  countedAt   DateTime?
+
+  @@unique([stocktakeId, variantId, locationId])
+  @@map("stocktake_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Orders — manual or from the website; allocated (reserved), picked (loaded → In Transit),
+// delivered in the next phase.
+// ---------------------------------------------------------------------------
+
+enum OrderSource {
+  MANUAL
+  WEBSITE
+}
+
+enum OrderStatus {
+  /// Created, nothing reserved yet.
+  NEW
+  /// Stock reserved at chosen locations.
+  ALLOCATED
+  /// Some items picked/loaded.
+  PICKING
+  /// Everything picked (or the rest approved as missing) — in transit.
+  LOADED
+  /// The driver has set off.
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RETURNED
+  CANCELLED
+}
+
+enum OrderPayment {
+  PAID
+  UNPAID
+  /// Cash on delivery: the driver collects codAmount.
+  COD
+}
+
+model Order {
+  id              String       @id @default(uuid()) @db.Uuid
+  number          Int          @unique
+  orderNumber     String       @unique
+  source          OrderSource
+  /// The website's order id — the same order is never imported twice.
+  externalId      String?
+  status          OrderStatus  @default(NEW)
+  customerName    String
+  customerPhone   String?
+  address         String?
+  /// Map pin.
+  latitude        Float?
+  longitude       Float?
+  notes           String?
+  paymentStatus   OrderPayment @default(UNPAID)
+  codAmount       Decimal?     @db.Decimal(12, 2)
+  deliveryDate    DateTime?    @db.Date
+  /// e.g. "14:00–17:00"
+  timeWindow      String?
+  driverId        String?      @db.Uuid
+  driver          User?        @relation("OrderDriver", fields: [driverId], references: [id])
+  createdById     String?      @db.Uuid
+  createdBy       User?        @relation("OrderCreator", fields: [createdById], references: [id])
+  /// Set when an admin/manager approved finishing with boxes/items missing.
+  shortReason     String?
+  shortApprovedById String?    @db.Uuid
+  shortApprovedBy User?        @relation("OrderShortApprover", fields: [shortApprovedById], references: [id])
+  cancelReason    String?
+  // Delivery
+  startedAt       DateTime?
+  deliveredAt     DateTime?
+  deliveredById   String?      @db.Uuid
+  deliveredBy     User?        @relation("OrderDeliverer", fields: [deliveredById], references: [id])
+  /// Who took the goods at the door.
+  recipientName   String?
+  /// Cash the driver says they collected (cash-on-delivery orders).
+  codCollected    Decimal?     @db.Decimal(12, 2)
+  deliveryNote    String?
+  deliveryPhotoUrl String?
+  /// Admin/manager who approved delivering only part of the order.
+  partialApprovedById String?  @db.Uuid
+  partialApprovedBy User?      @relation("OrderPartialApprover", fields: [partialApprovedById], references: [id])
+  failedReason    String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  lines       OrderLine[]
+  allocations OrderAllocation[]
+  exceptions  DeliveryException[]
+
+  @@unique([source, externalId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+/// What the customer ordered: a STANDARD variant or a whole KIT.
+model OrderLine {
+  id          String            @id @default(uuid()) @db.Uuid
+  orderId     String            @db.Uuid
+  order       Order             @relation(fields: [orderId], references: [id])
+  lineNo      Int
+  variantId   String            @db.Uuid
+  variant     ProductVariant    @relation(fields: [variantId], references: [id])
+  description String
+  quantity    Int
+  /// Price from the website, for reference.
+  unitPrice   Decimal?          @db.Decimal(12, 2)
+
+  allocations OrderAllocation[]
+
+  @@unique([orderId, lineNo])
+  @@map("order_lines")
+}
+
+/// Stock reserved for a line at one location (a kit line has one or more per box).
+model OrderAllocation {
+  id         String         @id @default(uuid()) @db.Uuid
+  orderId    String         @db.Uuid
+  order      Order          @relation(fields: [orderId], references: [id])
+  lineId     String         @db.Uuid
+  line       OrderLine      @relation(fields: [lineId], references: [id])
+  /// The STANDARD variant, or one box (COMPONENT) of a kit.
+  variantId  String         @db.Uuid
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  locationId String         @db.Uuid
+  location   Location       @relation(fields: [locationId], references: [id])
+  /// Reserved here.
+  quantity   Int
+  /// Scanned and loaded (now In Transit).
+  picked     Int            @default(0)
+  /// Reservation given back without picking (cancelled, or approved as missing).
+  released   Int            @default(0)
+  /// Loaded units handed to the customer.
+  delivered  Int            @default(0)
+  /// Loaded units scanned back into stock (cancelled/failed/partly refused delivery).
+  returned   Int            @default(0)
+
+  @@index([orderId])
+  @@map("order_allocations")
+}
+
+enum TransferStatus {
+  /// Sent, not (fully) received yet.
+  IN_TRANSIT
+  /// Everything received (or the rest written off).
+  RECEIVED
+  CANCELLED
+}
+
+/// Two-step transfer between locations: scan out at the source, scan in at the destination.
+model StockTransfer {
+  id             String         @id @default(uuid()) @db.Uuid
+  number         Int            @unique
+  code           String         @unique
+  fromLocationId String         @db.Uuid
+  fromLocation   Location       @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocationId   String         @db.Uuid
+  toLocation     Location       @relation("TransferTo", fields: [toLocationId], references: [id])
+  status         TransferStatus @default(IN_TRANSIT)
+  note           String?
+  sentById       String         @db.Uuid
+  sentBy         User           @relation("TransferSender", fields: [sentById], references: [id])
+  receivedById   String?        @db.Uuid
+  receivedBy     User?          @relation("TransferReceiver", fields: [receivedById], references: [id])
+  sentAt         DateTime       @default(now())
+  receivedAt     DateTime?
+  /// Why the transfer was closed with items missing, or cancelled.
+  closedReason   String?
+  updatedAt      DateTime       @updatedAt
+
+  lines StockTransferLine[]
+
+  @@index([status])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id         String         @id @default(uuid()) @db.Uuid
+  transferId String         @db.Uuid
+  transfer   StockTransfer  @relation(fields: [transferId], references: [id])
+  variantId  String         @db.Uuid
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+  quantity   Int
+  received   Int            @default(0)
+  /// Never arrived — written off when the transfer was closed.
+  lost       Int            @default(0)
+
+  @@unique([transferId, variantId])
+  @@map("stock_transfer_lines")
+}
+
+enum ImportIssueStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+/// A website order that could not be imported (unknown SKU, bad data…). Kept so nobody loses
+/// an order: it is shown as a problem and can be retried once the cause is fixed.
+model ImportIssue {
+  id           String            @id @default(uuid()) @db.Uuid
+  source       OrderSource
+  externalId   String?
+  /// Exactly what was received.
+  payload      Json
+  error        String
+  status       ImportIssueStatus @default(OPEN)
+  attempts     Int               @default(1)
+  firstSeenAt  DateTime          @default(now())
+  lastTriedAt  DateTime          @default(now())
+  /// The order created once it went through.
+  orderId      String?           @db.Uuid
+  resolvedById String?           @db.Uuid
+  resolvedAt   DateTime?
+
+  @@unique([source, externalId])
+  @@index([status])
+  @@map("import_issues")
+}
+
+enum DeliveryExceptionType {
+  MISSING_BOX
+  DAMAGED_BOX
+  CUSTOMER_REFUSED
+  NOT_HOME
+  WRONG_ADDRESS
+  OTHER
+}
+
+/// Problems reported during delivery (with photo/notes). Append-only.
+model DeliveryException {
+  id           String                @id @default(uuid()) @db.Uuid
+  orderId      String                @db.Uuid
+  order        Order                 @relation(fields: [orderId], references: [id])
+  type         DeliveryExceptionType
+  /// The item/box concerned, if any.
+  variantId    String?               @db.Uuid
+  variant      ProductVariant?       @relation(fields: [variantId], references: [id])
+  /// The warehouse/shop location responsible (e.g. where a damaged box was picked from).
+  locationId   String?               @db.Uuid
+  location     Location?             @relation(fields: [locationId], references: [id])
+  note         String
+  photoUrl     String?
+  reportedById String                @db.Uuid
+  reportedBy   User                  @relation("ExceptionReporter", fields: [reportedById], references: [id])
+  createdAt    DateTime              @default(now())
+
+  @@index([orderId])
+  @@map("delivery_exceptions")
 }
 
 // ---------------------------------------------------------------------------
